@@ -1,0 +1,26 @@
+[project]
+name = "jalod-api"
+version = "0.1.0"
+description = "Add your description here"
+dependencies = [
+    "flask>=3.0.3",
+    "python-dotenv>=1.0.1",
+    "sqlalchemy>=2.0.34",
+    "flask-sqlalchemy>=3.1.1",
+]
+readme = "README.md"
+requires-python = ">= 3.12"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = []
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jalod_api"]
