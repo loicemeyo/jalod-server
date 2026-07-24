@@ -1,15 +1,20 @@
 from flask.views import MethodView
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import get_jwt_identity, jwt_required
 from flask_smorest import Blueprint, abort
+from datetime import datetime, timedelta
 
 try:
     from ..db import db
+    from ..models.contribution import ContributionModel
     from ..models.member import memberModel
     from ..schemas.member import BirthdaySchema, MemberCreateSchema, MemberSchema, MemberUpdateSchema
+    from ..schemas.contribution import ContributionSchema
 except ImportError:  # pragma: no cover - allows running from src directory
     from db import db
+    from models.contribution import ContributionModel
     from models.member import memberModel
     from schemas.member import BirthdaySchema, MemberCreateSchema, MemberSchema, MemberUpdateSchema
+    from schemas.contribution import ContributionSchema
 
 blp = Blueprint("members", __name__, description="Operations on members")
 
@@ -59,6 +64,32 @@ class MemberBirthdays(MethodView):
             }
             for member in birthdays
         ]
+
+
+@blp.route("/members/me/contributions")
+class MemberContributions(MethodView):
+    @blp.response(200, schema=ContributionSchema(many=True), description="Get the authenticated member's contributions for the trailing 12 months")
+    @jwt_required()
+    def get(self):
+        """Get the authenticated member's contributions for the trailing 12 months."""
+        member_identity = get_jwt_identity()
+        try:
+            member_id = int(member_identity)
+        except (TypeError, ValueError):
+            abort(401, message="Invalid member identity")
+
+        member = db.session.get(memberModel, member_id)
+        if not member:
+            abort(404, message="Member not found")
+
+        cutoff_date = datetime.utcnow() - timedelta(days=365)
+
+        return (
+            ContributionModel.query.filter(ContributionModel.member_id == member.id)
+            .filter(ContributionModel.date >= cutoff_date)
+            .order_by(ContributionModel.date.asc())
+            .all()
+        )
 
 
 @blp.route("/members/<int:member_id>")
