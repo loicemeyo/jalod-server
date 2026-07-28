@@ -67,6 +67,16 @@ app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "dev-jwt-secret-
 configure_database(app)
 ma.init_app(app)
 api = Api(app)
+
+api.spec.components.security_scheme(
+    "bearerAuth",
+    {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+    },
+)
+
 api.register_blueprint(ContributionBlueprint)
 api.register_blueprint(MemberBlueprint)
 api.register_blueprint(AuthBlueprint)

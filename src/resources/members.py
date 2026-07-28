@@ -26,6 +26,7 @@ blp = Blueprint("members", __name__, description="Operations on members")
 @blp.route("/members")
 class Members(MethodView):
     @blp.response(200, schema=MemberSchema(many=True), description="Get all members")
+    @blp.doc(security=[{"bearerAuth": []}])
     @jwt_required()
     def get(self):
         """Get all members"""
@@ -49,6 +50,7 @@ class Members(MethodView):
 @blp.route("/members/birthdays")
 class MemberBirthdays(MethodView):
     @blp.response(200, schema=BirthdaySchema(many=True), description="Get all member birthdays")
+    @blp.doc(security=[{"bearerAuth": []}])
     @jwt_required()
     def get(self):
         """Get all member birthdays"""
@@ -72,6 +74,7 @@ class MemberBirthdays(MethodView):
 @blp.route("/members/me/contributions")
 class MemberContributions(MethodView):
     @blp.response(200, schema=ContributionSchema(many=True), description="Get the authenticated member's contributions for the trailing 12 months")
+    @blp.doc(security=[{"bearerAuth": []}])
     @jwt_required()
     def get(self):
         """Get the authenticated member's contributions for the trailing 12 months."""
@@ -130,6 +133,7 @@ class Member(MethodView):
         return member
 
     @blp.response(204, description="Delete a member")
+    @blp.doc(security=[{"bearerAuth": []}])
     @jwt_required()
     def delete(self, member_id):
         """Delete a member by ID"""

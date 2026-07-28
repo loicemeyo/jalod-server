@@ -16,12 +16,13 @@ class ContributionSchema(SQLAlchemyAutoSchema):
         load_instance = True
         sqla_session = db.session
         include_relationships = False
+        exclude = ("type",)
 
     id = fields.Int(dump_only=True)
     member_id = fields.Int(dump_only=True)
     amount = fields.Decimal(required=True, as_string=True)
     date = fields.DateTime(required=True)
-    contribution_type = fields.String(required=True, validate=validate.OneOf(["boma", "mpesa", "cash", "bank"]))
+    contribution_type = fields.String(required=True, attribute="type", validate=validate.OneOf(["boma", "mpesa", "cash", "bank"]))
 
 
 class ContributionCreateSchema(Schema):

@@ -55,6 +55,7 @@ def _load_owned_contribution(contribution_id: int) -> ContributionModel:
 class Contributions(MethodView):
     @blp.arguments(ContributionCreateSchema, location="json")
     @blp.response(201, schema=ContributionSchema, description="Create a contribution")
+    @blp.doc(security=[{"bearerAuth": []}])
     @jwt_required()
     def post(self, payload):
         """Create a contribution for the authenticated member."""
@@ -78,6 +79,7 @@ class Contributions(MethodView):
 @blp.route("/contributions/<int:contribution_id>")
 class Contribution(MethodView):
     @blp.response(200, schema=ContributionSchema, description="Get a contribution by ID")
+    @blp.doc(security=[{"bearerAuth": []}])
     @jwt_required()
     def get(self, contribution_id):
         """Get one contribution owned by the authenticated member."""
@@ -85,6 +87,7 @@ class Contribution(MethodView):
 
     @blp.arguments(ContributionUpdateSchema, location="json")
     @blp.response(200, schema=ContributionSchema, description="Edit a contribution")
+    @blp.doc(security=[{"bearerAuth": []}])
     @jwt_required()
     def put(self, payload, contribution_id):
         """Edit a contribution owned by the authenticated member."""
@@ -97,6 +100,7 @@ class Contribution(MethodView):
         return contribution
 
     @blp.response(204, description="Delete a contribution")
+    @blp.doc(security=[{"bearerAuth": []}])
     @jwt_required()
     def delete(self, contribution_id):
         """Delete a contribution owned by the authenticated member."""

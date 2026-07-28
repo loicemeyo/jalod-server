@@ -36,6 +36,7 @@ class WelfareFunctions(MethodView):
 
     @blp.arguments(WelfareCreateSchema, location="json")
     @blp.response(201, schema=WelfareSchema, description="Create a welfare event")
+    @blp.doc(security=[{"bearerAuth": []}])
     @jwt_required()
     def post(self, payload):
         """Create a new welfare event"""
@@ -66,6 +67,7 @@ class WelfareEvent(MethodView):
 
     @blp.arguments(WelfareUpdateSchema, location="json")
     @blp.response(200, schema=WelfareSchema, description="Edit a welfare event")
+    @blp.doc(security=[{"bearerAuth": []}])
     @jwt_required()
     def put(self, payload, event_id):
         """Edit a welfare event by ID"""
@@ -80,6 +82,7 @@ class WelfareEvent(MethodView):
         return welfare
 
     @blp.response(204, description="Delete a welfare event")
+    @blp.doc(security=[{"bearerAuth": []}])
     @jwt_required()
     def delete(self, event_id):
         """Delete a welfare event by ID"""
