@@ -40,6 +40,7 @@ class SignUp(MethodView):
     @blp.arguments(SignupRequestSchema)
     @blp.response(201, schema=AuthResponseSchema, description="Create a new member account")
     def post(self, payload):
+        """Create a new member account"""
         name = payload["name"].strip()
         email_address = payload["email_address"].strip()
         phone_number = _parse_phone_number(payload["phone_number"])
@@ -86,6 +87,7 @@ class Login(MethodView):
     @blp.arguments(LoginRequestSchema)
     @blp.response(200, schema=AuthResponseSchema, description="Login with name and password")
     def post(self, payload):
+        """Login with name and password"""
         name = payload["name"].strip()
         password = payload["password"]
 

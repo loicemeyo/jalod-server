@@ -29,13 +29,13 @@ def test_contribution_crud_flow(client):
         json={
             "amount": 250.00,
             "date": "2026-07-10T00:00:00",
-            "type": "mpesa",
+            "contribution_type": "mpesa",
         },
     )
     assert create_response.status_code == 201
     created = create_response.get_json()
     assert created["amount"] == "250.00"
-    assert created["type"] == "mpesa"
+    assert created["contribution_type"] == "mpesa"
     assert created["member_id"] == member_id
 
     contribution_id = created["id"]
@@ -49,12 +49,12 @@ def test_contribution_crud_flow(client):
     update_response = client.put(
         f"/contributions/{contribution_id}",
         headers=headers,
-        json={"amount": 300.00, "type": "cash"},
+        json={"amount": 300.00, "contribution_type": "cash"},
     )
     assert update_response.status_code == 200
     updated = update_response.get_json()
     assert updated["amount"] == "300.00"
-    assert updated["type"] == "cash"
+    assert updated["contribution_type"] == "cash"
 
     delete_response = client.delete(f"/contributions/{contribution_id}", headers=headers)
     assert delete_response.status_code == 204
@@ -64,7 +64,7 @@ def test_contribution_crud_flow(client):
 
 
 def test_contribution_crud_requires_authentication(client):
-    assert client.post("/contributions", json={"amount": 1, "date": "2026-07-10T00:00:00", "type": "cash"}).status_code == 401
+    assert client.post("/contributions", json={"amount": 1, "date": "2026-07-10T00:00:00", "contribution_type": "cash"}).status_code == 401
     assert client.get("/contributions/1").status_code == 401
     assert client.put("/contributions/1", json={"amount": 2}).status_code == 401
     assert client.delete("/contributions/1").status_code == 401
@@ -79,7 +79,7 @@ def test_member_cannot_manage_another_members_contribution(client):
     create_response = client.post(
         "/contributions",
         headers=headers_one,
-        json={"amount": 50.00, "date": "2026-07-10T00:00:00", "type": "cash"},
+        json={"amount": 50.00, "date": "2026-07-10T00:00:00", "contribution_type": "cash"},
     )
     assert create_response.status_code == 201
     contribution_id = create_response.get_json()["id"]

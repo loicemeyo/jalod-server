@@ -26,9 +26,10 @@ def _ensure_admin():
 @blp.route("/treasury")
 class Treasury(MethodView):
     @blp.response(200, description="Get all treasury data")
+    @blp.doc(security=[{"bearerAuth": []}])
     @jwt_required()
     def get(self):
-        _ensure_admin()
         """Get all treasury data"""
+        _ensure_admin()
         logger.info("Treasury data fetched")
         return []
