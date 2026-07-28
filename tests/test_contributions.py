@@ -87,3 +87,144 @@ def test_member_cannot_manage_another_members_contribution(client):
     assert client.get(f"/contributions/{contribution_id}", headers=headers_two).status_code == 404
     assert client.put(f"/contributions/{contribution_id}", headers=headers_two, json={"amount": 55.00}).status_code == 404
     assert client.delete(f"/contributions/{contribution_id}", headers=headers_two).status_code == 404
+
+
+def test_create_contribution_missing_fields(client):
+    _, token = _signup_member(client, "MissingFields", "missing@example.com", 333333333)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.post("/contributions", headers=headers, json={})
+    assert resp.status_code == 422
+
+    resp = client.post("/contributions", headers=headers, json={"amount": 100.00})
+    assert resp.status_code == 422
+
+    resp = client.post("/contributions", headers=headers, json={"date": "2026-07-10T00:00:00"})
+    assert resp.status_code == 422
+
+    resp = client.post("/contributions", headers=headers, json={"contribution_type": "cash"})
+    assert resp.status_code == 422
+
+
+def test_create_contribution_invalid_type(client):
+    _, token = _signup_member(client, "InvalidType", "invalid@example.com", 444444444)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.post(
+        "/contributions",
+        headers=headers,
+        json={"amount": 50.00, "date": "2026-07-10T00:00:00", "contribution_type": "invalid"},
+    )
+    assert resp.status_code == 422
+
+
+def test_create_contribution_all_valid_types(client):
+    _, token = _signup_member(client, "AllTypes", "alltypes@example.com", 555555555)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    for ctype in ("boma", "mpesa", "cash", "bank"):
+        resp = client.post(
+            "/contributions",
+            headers=headers,
+            json={"amount": 75.00, "date": "2026-07-10T00:00:00", "contribution_type": ctype},
+        )
+        assert resp.status_code == 201
+        data = resp.get_json()
+        assert data["contribution_type"] == ctype
+        assert data["amount"] == "75.00"
+
+
+def test_get_contribution_not_found(client):
+    _, token = _signup_member(client, "GetNotFound", "getnotfound@example.com", 666666666)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.get("/contributions/99999", headers=headers)
+    assert resp.status_code == 404
+
+
+def test_update_contribution_all_fields(client):
+    _, token = _signup_member(client, "UpdateAll", "updateall@example.com", 777777777)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create_resp = client.post(
+        "/contributions",
+        headers=headers,
+        json={"amount": 100.00, "date": "2026-07-10T00:00:00", "contribution_type": "mpesa"},
+    )
+    assert create_resp.status_code == 201
+    contribution_id = create_resp.get_json()["id"]
+
+    update_resp = client.put(
+        f"/contributions/{contribution_id}",
+        headers=headers,
+        json={"amount": 200.00, "date": "2026-08-15T00:00:00", "contribution_type": "bank"},
+    )
+    assert update_resp.status_code == 200
+    updated = update_resp.get_json()
+    assert updated["amount"] == "200.00"
+    assert updated["contribution_type"] == "bank"
+
+
+def test_update_contribution_partial(client):
+    _, token = _signup_member(client, "UpdatePartial", "updatepartial@example.com", 888888888)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create_resp = client.post(
+        "/contributions",
+        headers=headers,
+        json={"amount": 300.00, "date": "2026-07-10T00:00:00", "contribution_type": "cash"},
+    )
+    assert create_resp.status_code == 201
+    contribution_id = create_resp.get_json()["id"]
+
+    update_resp = client.put(
+        f"/contributions/{contribution_id}",
+        headers=headers,
+        json={"amount": 350.00},
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.get_json()["amount"] == "350.00"
+
+    update_resp = client.put(
+        f"/contributions/{contribution_id}",
+        headers=headers,
+        json={"contribution_type": "boma"},
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.get_json()["contribution_type"] == "boma"
+
+
+def test_update_contribution_invalid_type(client):
+    _, token = _signup_member(client, "UpdateInvalid", "updateinvalid@example.com", 999999999)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create_resp = client.post(
+        "/contributions",
+        headers=headers,
+        json={"amount": 50.00, "date": "2026-07-10T00:00:00", "contribution_type": "cash"},
+    )
+    assert create_resp.status_code == 201
+    contribution_id = create_resp.get_json()["id"]
+
+    resp = client.put(
+        f"/contributions/{contribution_id}",
+        headers=headers,
+        json={"contribution_type": "invalid"},
+    )
+    assert resp.status_code == 422
+
+
+def test_update_contribution_not_found(client):
+    _, token = _signup_member(client, "UpdateNotFound", "updatenotfound@example.com", 101010101)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.put("/contributions/99999", headers=headers, json={"amount": 99.00})
+    assert resp.status_code == 404
+
+
+def test_delete_contribution_not_found(client):
+    _, token = _signup_member(client, "DeleteNotFound", "deletenotfound@example.com", 121212121)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.delete("/contributions/99999", headers=headers)
+    assert resp.status_code == 404
