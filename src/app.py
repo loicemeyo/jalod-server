@@ -9,6 +9,7 @@ from flask_jwt_extended import JWTManager
 try:
     from .db import configure_database, db, ensure_member_auth_columns
     from .resources.auth import blp as AuthBlueprint
+    from .resources.contributions import blp as ContributionBlueprint
     from .resources.members import blp as MemberBlueprint
     from .resources.treasury import blp as TreasuryBlueprint
     from .resources.welfare import blp as WelfareBlueprint
@@ -18,6 +19,7 @@ try:
 except ImportError:  # pragma: no cover - allows running app.py directly
     from db import configure_database, db, ensure_member_auth_columns
     from resources.auth import blp as AuthBlueprint
+    from resources.contributions import blp as ContributionBlueprint
     from resources.members import blp as MemberBlueprint
     from resources.treasury import blp as TreasuryBlueprint
     from resources.welfare import blp as WelfareBlueprint
@@ -45,6 +47,7 @@ app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "dev-jwt-secret-
 configure_database(app)
 ma.init_app(app)
 api = Api(app)
+api.register_blueprint(ContributionBlueprint)
 api.register_blueprint(MemberBlueprint)
 api.register_blueprint(AuthBlueprint)
 api.register_blueprint(TreasuryBlueprint)
