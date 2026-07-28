@@ -1,4 +1,5 @@
 from marshmallow import fields
+from marshmallow import Schema, validate
 from marshmallow_sqlalchemy import SQLAlchemyAutoSchema
 
 try:
@@ -18,6 +19,18 @@ class ContributionSchema(SQLAlchemyAutoSchema):
 
     id = fields.Int(dump_only=True)
     member_id = fields.Int(dump_only=True)
-    amount = fields.Decimal(required=True)
+    amount = fields.Decimal(required=True, as_string=True)
     date = fields.DateTime(required=True)
-    type = fields.String(required=True)
+    contribution_type = fields.String(required=True, validate=validate.OneOf(["boma", "mpesa", "cash", "bank"]))
+
+
+class ContributionCreateSchema(Schema):
+    amount = fields.Decimal(required=True, as_string=True)
+    date = fields.DateTime(required=True)
+    contribution_type = fields.String(required=True, validate=validate.OneOf(["boma", "mpesa", "cash", "bank"]))
+
+
+class ContributionUpdateSchema(Schema):
+    amount = fields.Decimal(as_string=True)
+    date = fields.DateTime()
+    contribution_type = fields.String(validate=validate.OneOf(["boma", "mpesa", "cash", "bank"]))

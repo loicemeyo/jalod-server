@@ -6,17 +6,16 @@ try:
     from ..models.member import memberModel
     from ..db import db
     from ..schemas.auth import AuthResponseSchema, LoginRequestSchema, SignupRequestSchema
+    from ..logging_config import get_logger
 except ImportError:  # pragma: no cover - allows running from src directory
     from models.member import memberModel
     from db import db
     from schemas.auth import AuthResponseSchema, LoginRequestSchema, SignupRequestSchema
+    from logging_config import get_logger
 
+logger = get_logger("jalod_api.auth")
 
 blp = Blueprint("auth", __name__, description="Authentication operations")
-
-
-# Authentication endpoints: signup and login. These create JWT access tokens
-# including a `role` claim so resource-level checks can authorize requests.
 
 
 def _parse_phone_number(value):
@@ -47,9 +46,11 @@ class SignUp(MethodView):
         password = payload["password"]
 
         if memberModel.query.filter_by(name=name).first():
+            logger.warning("Signup failed: name already exists (name=%s)", name)
             abort(409, message="Member with this name already exists")
 
         if memberModel.query.filter_by(email_address=email_address).first():
+            logger.warning("Signup failed: email already exists (email=%s)", email_address)
             abort(409, message="Member with this email already exists")
 
         member = memberModel(
@@ -61,6 +62,7 @@ class SignUp(MethodView):
 
         db.session.add(member)
         db.session.commit()
+        logger.info("Signup successful: member_id=%s name=%s", member.id, member.name)
 
         token = create_access_token(
             identity=str(member.id),
@@ -89,12 +91,14 @@ class Login(MethodView):
 
         member = memberModel.query.filter_by(name=name).first()
         if not member or not member.check_password(password):
+            logger.warning("Login failed: invalid credentials (name=%s)", name)
             abort(401, message="Invalid credentials")
 
         token = create_access_token(
             identity=str(member.id),
             additional_claims={"name": member.name, "role": member.role},
         )
+        logger.info("Login successful: member_id=%s name=%s role=%s", member.id, member.name, member.role)
         return {
             "message": "Login successful",
             "access_token": token,

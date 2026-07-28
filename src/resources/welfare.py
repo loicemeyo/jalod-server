@@ -5,6 +5,7 @@ from sqlalchemy import extract
 
 try:
     from ..db import db
+    from ..logging_config import get_logger
     from ..models.welfare import WelfareModel
     from ..schemas.welfare import WelfareCreateSchema, WelfareSchema, WelfareUpdateSchema
     from ..models.member import memberModel
@@ -12,31 +13,27 @@ try:
     from ..schemas.welfare import WelfareMonthResponseSchema
 except ImportError:  # pragma: no cover - allows running from src directory
     from db import db
+    from logging_config import get_logger
     from models.welfare import WelfareModel
     from schemas.welfare import WelfareCreateSchema, WelfareSchema, WelfareUpdateSchema
     from models.member import memberModel
     from schemas.member import BirthdaySchema
     from schemas.welfare import WelfareMonthResponseSchema
 
-# Create the welfare blueprint for API routes.
+logger = get_logger("jalod_api.welfare")
 
 blp = Blueprint("welfare", __name__, description="Operations on welfare events")
 
 
-# Welfare endpoints: listing and single-event fetch are public. Creating,
-# updating and deleting events require authentication (and can be restricted
-# further to admin-only in the future).
-
-
 @blp.route("/welfare")
 class WelfareFunctions(MethodView):
-    # Return all welfare events, ordered by date.
     @blp.response(200, schema=WelfareSchema(many=True), description="Get all welfare events")
     def get(self):
         """Get all welfare events"""
-        return WelfareModel.query.order_by(WelfareModel.date.asc()).all()
+        events = WelfareModel.query.order_by(WelfareModel.date.asc()).all()
+        logger.info("Listed %d welfare events", len(events))
+        return events
 
-    # Create a new welfare event from the request payload.
     @blp.arguments(WelfareCreateSchema, location="json")
     @blp.response(201, schema=WelfareSchema, description="Create a welfare event")
     @jwt_required()
@@ -46,23 +43,27 @@ class WelfareFunctions(MethodView):
 
         db.session.add(welfare)
         db.session.commit()
+        logger.info(
+            "Welfare event created: event_id=%s name=%s",
+            welfare.id,
+            welfare.event_name,
+        )
 
         return welfare, 201
 
 
 @blp.route("/welfare/<int:event_id>")
 class WelfareEvent(MethodView):
-    # Retrieve one welfare event by its ID.
     @blp.response(200, schema=WelfareSchema, description="Get a welfare event by ID")
     def get(self, event_id):
         """Get a welfare event by ID"""
         welfare = db.session.get(WelfareModel, event_id)
         if not welfare:
+            logger.warning("Welfare event not found: event_id=%s", event_id)
             abort(404, message="Welfare event not found")
 
         return welfare
 
-    # Update an existing welfare event.
     @blp.arguments(WelfareUpdateSchema, location="json")
     @blp.response(200, schema=WelfareSchema, description="Edit a welfare event")
     @jwt_required()
@@ -70,23 +71,26 @@ class WelfareEvent(MethodView):
         """Edit a welfare event by ID"""
         welfare = db.session.get(WelfareModel, event_id)
         if not welfare:
+            logger.warning("Welfare event not found for update: event_id=%s", event_id)
             abort(404, message="Welfare event not found")
 
         welfare = WelfareSchema().load(payload, instance=welfare, partial=True, session=db.session)
         db.session.commit()
+        logger.info("Welfare event updated: event_id=%s", event_id)
         return welfare
 
-    # Delete a welfare event by its ID.
     @blp.response(204, description="Delete a welfare event")
     @jwt_required()
     def delete(self, event_id):
         """Delete a welfare event by ID"""
         welfare = db.session.get(WelfareModel, event_id)
         if not welfare:
+            logger.warning("Welfare event not found for deletion: event_id=%s", event_id)
             abort(404, message="Welfare event not found")
 
         db.session.delete(welfare)
         db.session.commit()
+        logger.info("Welfare event deleted: event_id=%s", event_id)
 
         return "", 204
 
@@ -95,15 +99,10 @@ class WelfareEvent(MethodView):
 class WelfareByMonth(MethodView):
     @blp.response(200, schema=WelfareMonthResponseSchema(), description="Get welfare events and birthdays for a given month")
     def get(self, year, month):
-        """Get welfare events for a specific year and month (1-12) and member birthdays in that month.
-
-        Birthdays are returned for members whose `birthday` month matches the
-        requested `month` (year is ignored for birthdays since they recur annually).
-        """
+        """Get welfare events for a specific year and month (1-12) and member birthdays in that month."""
         if month < 1 or month > 12:
             abort(400, message="month must be between 1 and 12")
 
-        # Welfare events are filtered by year and month.
         events = (
             db.session.query(WelfareModel)
             .filter(extract("year", WelfareModel.date) == year)
@@ -112,7 +111,6 @@ class WelfareByMonth(MethodView):
             .all()
         )
 
-        # Member birthdays: match month only (ignore year) and skip null birthdays.
         birthdays = (
             db.session.query(memberModel)
             .filter(memberModel.birthday.isnot(None))
@@ -121,4 +119,11 @@ class WelfareByMonth(MethodView):
             .all()
         )
 
+        logger.info(
+            "Welfare month query: year=%d month=%d events=%d birthdays=%d",
+            year,
+            month,
+            len(events),
+            len(birthdays),
+        )
         return {"events": events, "birthdays": birthdays}

@@ -2,16 +2,24 @@ from flask.views import MethodView
 from flask_jwt_extended import get_jwt, jwt_required
 from flask_smorest import Blueprint, abort
 
+try:
+    from ..logging_config import get_logger
+except ImportError:  # pragma: no cover - allows running from src directory
+    from logging_config import get_logger
+
+logger = get_logger("jalod_api.treasury")
+
 blp = Blueprint("treasury", __name__, description="Operations on treasury")
 
 
 def _ensure_admin():
-    """Abort with 403 unless the requester has the `admin` role in their JWT.
-
-    This is a tiny convenience helper used by administrative endpoints.
-    """
+    """Abort with 403 unless the requester has the `admin` role in their JWT."""
     claims = get_jwt()
     if claims.get("role") != "admin":
+        logger.warning(
+            "Treasury access denied: non-admin user (role=%s)",
+            claims.get("role"),
+        )
         abort(403, message="Admin privileges required")
 
 
@@ -22,4 +30,5 @@ class Treasury(MethodView):
     def get(self):
         _ensure_admin()
         """Get all treasury data"""
+        logger.info("Treasury data fetched")
         return []
