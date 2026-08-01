@@ -4,7 +4,7 @@ A Flask-based REST API server for managing member data with automatic API docume
 
 ## Project Overview
 
-**Jalod Server** is a Python Flask application designed to manage member information for an organization. The API provides endpoints to retrieve member records from a database, with automatic API documentation generated through flask-smorest and Swagger UI.
+**Jalod Server** is a Python Flask application designed to manage member, financial contributions and events information for family social group. The API provides endpoints to retrieve member records from a database, with automatic API documentation generated through flask-smorest and Swagger UI.
 
 ### Current Stage
 
