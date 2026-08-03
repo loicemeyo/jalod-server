@@ -18,13 +18,22 @@ This is a **minimum viable product (MVP)** with core infrastructure and basic me
 jalod-server/
 ├── src/
 │   ├── app.py                    # Flask application entry point and configuration
-│   ├── db.py                     # SQLAlchemy database instance initialization
-│   ├── jalod_api/
-│   │   └── __init__.py           # Package initialization (placeholder helper function)
+│   ├── db.py                     # SQLAlchemy database instance + URL normalization
 │   ├── models/
-│   │   └── member.py             # SQLAlchemy ORM model for Member entity
-│   └── resources/
-│       └── members.py             # Flask-smorest Blueprint with Member API endpoints
+│   │   ├── member.py             # SQLAlchemy ORM model for Member entity
+│   │   ├── contribution.py       # SQLAlchemy ORM model for contributions
+│   │   ├── treasury.py           # SQLAlchemy ORM model for treasury
+│   │   └── welfare.py            # SQLAlchemy ORM model for welfare
+│   ├── resources/                # Flask-smorest API blueprints
+│   └── schemas/                  # Marshmallow request/response schemas
+├── migrations/
+│   ├── env.py                    # Alembic environment (wired to app models)
+│   ├── script.py.mako            # Migration script template
+│   └── versions/
+│       └── 0001_initial_schema.py # Baseline schema migration
+├── scripts/
+│   └── init_db.py                # Database initialization script
+├── alembic.ini                   # Alembic configuration
 ├── Dockerfile                    # Docker container configuration for Python 3.12
 ├── docker-compose.yml            # Docker Compose configuration for local development
 ├── pyproject.toml                # Project metadata and dependencies (Rye-based)
@@ -133,7 +142,8 @@ When the app starts with a Neon connection:
 
 - Flask loads environment variables from `.env`.
 - SQLAlchemy connects to the Neon Postgres database.
-- The app creates tables if they do not exist yet.
+- For a production deployment, run `python scripts/init_db.py` (or `alembic upgrade head`) to create/upgrade the schema before starting the app. The Docker image does this automatically on container start.
+- As a development convenience, the app still creates tables with `db.create_all()` on startup if they do not exist yet.
 - Existing databases get schema adjustments for newer member columns used by authentication and contributions.
 
 ### 7. Verify the Connection
@@ -150,6 +160,56 @@ If you see database errors, the most common causes are:
 - a missing `sslmode=require`
 - a stale container that was not rebuilt after editing `.env`
 - the wrong database URL still being used by the container
+
+---
+
+## Database Migrations & Initialization
+
+The database schema is managed with **Alembic** migrations. Migrations live in
+`migrations/` and are configured via `alembic.ini`. The migration environment
+resolves the database URL exactly like the application does (`DATABASE_URL`,
+then `NEON_DATABASE_URL`, then `POSTGRES_URL`, with Neon URL normalization), so
+it works with the production `.env` connection string.
+
+### Initializing the Schema
+
+Run the initialization script to apply all pending migrations (schema only, no
+seed data):
+
+```bash
+python scripts/init_db.py
+```
+
+This is equivalent to running:
+
+```bash
+alembic upgrade head
+```
+
+The baseline migration (`0001_initial_schema.py`) creates the `Members`,
+`Contributions`, `Treasury`, and `Welfare` tables. It is tolerant of databases
+that already contain these tables (e.g. created earlier by `db.create_all()` on
+startup), so it can be applied to both fresh and existing databases.
+
+### Working with Migrations
+
+After changing a model in `src/models/`, generate a new migration and apply it:
+
+```bash
+alembic revision --autogenerate -m "describe the change"
+alembic upgrade head
+```
+
+Other useful commands:
+
+```bash
+alembic current          # show the current revision
+alembic history          # list applied revisions
+alembic downgrade -1     # revert the last migration
+```
+
+> Note: Alembic must be installed (it is part of `requirements.txt` /
+> `pyproject.toml`). Run `pip install -r requirements.txt` or `rye sync` first.
 
 ---
 
