@@ -1,14 +1,20 @@
 # Jalod Server API
 
-A Flask-based REST API server for managing member data with automatic API documentation via Swagger/OpenAPI.
+A Flask-based REST API server for managing member data, contributions, welfare events, and treasury for a family social group, with JWT authentication and automatic API documentation via Swagger/OpenAPI.
 
 ## Project Overview
 
-**Jalod Server** is a Python Flask application designed to manage member, financial contributions and events information for family social group. The API provides endpoints to retrieve member records from a database, with automatic API documentation generated through flask-smorest and Swagger UI.
+**Jalod Server** is a Python Flask application that powers the backend for the Jalod mobile app. It provides:
 
-### Current Stage
+- **Member management** — create, read, update, delete members; birthday listing; each member has a login account.
+- **Authentication** — JWT-based signup/login with role-based access (`user` / `admin`).
+- **Contributions** — per-member contribution records (amount, date, payment type: `boma`, `mpesa`, `cash`, `bank`), scoped so each member can only manage their own records.
+- **Welfare** — group events/expenses, plus a combined monthly view of events and member birthdays.
+- **Treasury** — table and admin-only endpoint exist; data serving is a stub for now.
 
-This is a **minimum viable product (MVP)** with core infrastructure and basic member management functionality implemented. The foundation is solid and ready for feature expansion.
+API documentation is auto-generated with flask-smorest and served via Swagger UI.
+
+> **Note for mobile-app developers:** a separate, mobile-focused reference lives in `MOBILE_APP_README.md` (not tracked in git). This file is the general project README.
 
 ---
 
@@ -17,28 +23,35 @@ This is a **minimum viable product (MVP)** with core infrastructure and basic me
 ```
 jalod-server/
 ├── src/
-│   ├── app.py                    # Flask application entry point and configuration
-│   ├── db.py                     # SQLAlchemy database instance + URL normalization
+│   ├── app.py                    # Flask app entry point, config, blueprints, error handlers
+│   ├── db.py                     # SQLAlchemy instance, URL normalization, startup schema fixes
+│   ├── logging_config.py         # Structured (JSON/console) logging with request correlation IDs
 │   ├── models/
-│   │   ├── member.py             # SQLAlchemy ORM model for Member entity
-│   │   ├── contribution.py       # SQLAlchemy ORM model for contributions
-│   │   ├── treasury.py           # SQLAlchemy ORM model for treasury
-│   │   └── welfare.py            # SQLAlchemy ORM model for welfare
-│   ├── resources/                # Flask-smorest API blueprints
-│   └── schemas/                  # Marshmallow request/response schemas
-├── migrations/
-│   ├── env.py                    # Alembic environment (wired to app models)
-│   ├── script.py.mako            # Migration script template
-│   └── versions/
-│       └── 0001_initial_schema.py # Baseline schema migration
+│   │   ├── member.py             # Member entity (incl. password hash + role)
+│   │   ├── contribution.py       # Contribution records
+│   │   ├── treasury.py           # Treasury balances
+│   │   └── welfare.py            # Welfare events
+│   ├── resources/                # flask-smorest blueprints (API endpoints)
+│   │   ├── auth.py               # Signup / login (JWT)
+│   │   ├── members.py            # Member CRUD, birthdays, own contributions
+│   │   ├── contributions.py      # Contribution CRUD (ownership-scoped)
+│   │   ├── treasury.py           # Treasury (admin-only)
+│   │   └── welfare.py            # Welfare CRUD + monthly view
+│   ├── schemas/                  # Marshmallow request/response schemas
+│   └── jalod_api/                # Package marker
+├── migrations/                   # Alembic migrations
+│   ├── env.py
+│   └── versions/0001_initial_schema.py
 ├── scripts/
-│   └── init_db.py                # Database initialization script
-├── alembic.ini                   # Alembic configuration
-├── Dockerfile                    # Docker container configuration for Python 3.12
-├── docker-compose.yml            # Docker Compose configuration for local development
-├── pyproject.toml                # Project metadata and dependencies (Rye-based)
-├── requirements.txt              # Python package dependencies (pip format)
-└── README.md                     # This file
+│   └── init_db.py                # Applies pending migrations
+├── tests/                        # pytest test suite
+├── alembic.ini
+├── Dockerfile
+├── docker-compose.yml
+├── pyproject.toml                # Project metadata + dependencies (Rye)
+├── requirements.txt
+├── .env / .flaskenv              # Environment config (never commit .env)
+└── README.md
 ```
 
 ---
@@ -47,67 +60,71 @@ jalod-server/
 
 ### Core Framework
 
-- **Flask** (3.0.3+): Lightweight web framework for building the REST API
-- **Flask-Smorest** (0.x): Extension for building REST APIs with automatic OpenAPI/Swagger documentation
-- **Flask-SQLAlchemy** (3.1.1+): ORM integration layer for database operations
+- **Flask** (3.0.3+): lightweight web framework
+- **Flask-Smorest** (0.x): REST API framework with automatic OpenAPI/Swagger docs and input validation via marshmallow
+- **Flask-SQLAlchemy** (3.1.1+): ORM integration
+- **Flask-JWT-Extended** (4.6.0+): JWT authentication + role claims
+- **Flask-Marshmallow / Marshmallow-SQLAlchemy**: request/response (de)serialization
 
 ### Database
 
-- **SQLAlchemy** (2.0.34+): Python SQL toolkit and Object-Relational Mapping (ORM)
-- **Neon Hosted PostgreSQL**: The backend is configured to connect to a Neon-managed Postgres database through environment variables
+- **SQLAlchemy** (2.0.34+): ORM toolkit
+- **Neon Hosted PostgreSQL** (primary): connection string from environment variables
+- **SQLite** (local fallback): used automatically when no `DATABASE_URL` is set (and by tests)
 
 ### Database Connection Strategy
 
-The application now expects a PostgreSQL connection string from the environment. During startup, the backend reads `DATABASE_URL`, `NEON_DATABASE_URL`, or `POSTGRES_URL`, normalizes Neon-style URLs, and connects the Flask-SQLAlchemy layer to Postgres.
-
-If no database URL is provided, the app can fall back to SQLite for local-only development, but the intended setup is Neon Postgres.
+On startup the app reads `DATABASE_URL`, then `NEON_DATABASE_URL`, then `POSTGRES_URL`. Neon-style `postgres://` URLs are normalized to a SQLAlchemy-compatible form (`postgresql+psycopg2://`), `sslmode=require` is ensured, and unsupported Neon query params (e.g. `channelbinding`) are stripped. If no URL is set, the app falls back to `sqlite:///jalod.db`.
 
 ### Development & Deployment
 
-- **Python** 3.12.5
-- **Docker** with slim Python image for containerization
-- **Rye** package manager (specified in pyproject.toml)
-- **python-dotenv** (1.0.1+): Environment variable management
+- Python 3.12
+- Docker (slim Python image), Docker Compose for local dev
+- Rye package manager (`pyproject.toml`) / pip (`requirements.txt`)
+- python-dotenv for environment loading
+- Alembic for schema migrations
+- pytest for tests
 
 ---
 
-## Neon PostgreSQL Setup
+## Quickstart
 
-This project is designed to run against a Neon hosted PostgreSQL database. The steps below describe how to create the Neon account, provision the database, and connect it to the backend.
+### Option A: Docker Compose (recommended for local dev)
 
-### 1. Create a Neon Account
-
-1. Go to [https://neon.tech](https://neon.tech).
-2. Sign up with your email, GitHub, or Google account.
-3. Verify your account if Neon prompts you to do so.
-4. After login, you will land in the Neon console where projects and databases are managed.
-
-### 2. Create a Neon Project and Database
-
-1. In the Neon console, create a new project.
-2. Choose a project name that matches this backend, for example `jalod-server`.
-3. Select the preferred region closest to your application or development environment.
-4. Neon creates the first Postgres database automatically inside the project.
-5. Open the project dashboard and locate the connection details or connection string.
-
-### 3. Copy the Database Connection String
-
-Neon provides a PostgreSQL connection URL in the project dashboard. It usually looks similar to this:
-
-```text
-postgres://USER:PASSWORD@HOST.neon.tech:5432/DB_NAME?sslmode=require&channelbinding=require
+```bash
+docker-compose up
+# App runs at http://localhost:5000
 ```
 
-For this backend:
+### Option B: Docker
 
-- You can paste the Neon URL into `.env` as `DATABASE_URL`.
-- The application already normalizes `postgres://` to a SQLAlchemy-friendly form.
-- The backend also strips unsupported Neon query parameters such as `channelbinding`.
-- Keep `sslmode=require` in the URL because Neon requires SSL.
+```bash
+docker build -t jalod-api .
+docker run -p 5000:5000 jalod-api
+```
 
-### 4. Add the Connection String to `.env`
+The Docker image runs `python scripts/init_db.py` before starting, so migrations are applied automatically.
 
-Create or update the `.env` file in the project root with the following values:
+### Option C: Direct Python (requires Python 3.12+)
+
+```bash
+pip install -r requirements.txt
+# set DATABASE_URL (or omit for SQLite) and JWT_SECRET_KEY
+flask run
+# App runs at http://localhost:5000
+```
+
+### Useful URLs
+
+- Welcome: `http://localhost:5000`
+- Swagger UI: `http://localhost:5000/swagger-ui`
+- OpenAPI spec: served at the root prefix (see Swagger UI)
+
+---
+
+## Configuration (`.env`)
+
+Create a `.env` in the project root:
 
 ```env
 DATABASE_URL=postgres://USER:PASSWORD@HOST.neon.tech:5432/DB_NAME?sslmode=require
@@ -115,351 +132,281 @@ JWT_SECRET_KEY=your-jwt-secret-key
 FLASK_APP=src/app.py
 FLASK_ENV=development
 DEBUG=True
+
+# Optional logging
+LOG_LEVEL=INFO            # INFO | DEBUG | WARNING | ERROR
+LOG_FORMAT=console        # console | json
+LOG_FILE=logs/app.log     # optional file output
 ```
 
-Recommended notes:
+Notes:
 
 - Do not commit `.env` to source control.
-- Use the exact connection string Neon gives you, then let the app normalize it.
-- If you rotate your Neon password or recreate the database, update `DATABASE_URL` immediately.
+- `DATABASE_URL` may be omitted for SQLite-based local development.
+- `JWT_SECRET_KEY` is required in production (a dev default is used otherwise).
 
-### 5. Restart the Backend After Updating `.env`
+---
 
-The container or local Flask process must be restarted after changing the environment file.
+## Neon PostgreSQL Setup
 
-For Docker:
+1. Create an account at [neon.tech](https://neon.tech) and a project (e.g. `jalod-server`).
+2. Copy the connection string from the project dashboard (usually `postgres://USER:PASSWORD@HOST.neon.tech:5432/DB_NAME?...`).
+3. Set it as `DATABASE_URL` in `.env`. Keep `sslmode=require`; the app normalizes/strips the rest.
+4. Restart the backend after changing `.env`.
 
-```bash
-docker build -t jalod-api .
-docker run -p 5000:5000 jalod-api
-```
+Verify connectivity with:
 
-If you are reusing an existing container, stop and remove it first before running a new one.
+1. `GET /` — app is running
+2. `GET /members` (with a bearer token) — reads work
+3. `POST /auth/signup` — writes reach Neon
 
-### 6. What Happens on Startup
-
-When the app starts with a Neon connection:
-
-- Flask loads environment variables from `.env`.
-- SQLAlchemy connects to the Neon Postgres database.
-- For a production deployment, run `python scripts/init_db.py` (or `alembic upgrade head`) to create/upgrade the schema before starting the app. The Docker image does this automatically on container start.
-- As a development convenience, the app still creates tables with `db.create_all()` on startup if they do not exist yet.
-- Existing databases get schema adjustments for newer member columns used by authentication and contributions.
-
-### 7. Verify the Connection
-
-After the app starts, confirm the database is working by checking:
-
-1. `GET /` to confirm the Flask app is running.
-2. `GET /members` to verify member reads work.
-3. `POST /auth/signup` to confirm inserts are reaching Neon.
-
-If you see database errors, the most common causes are:
-
-- incorrect username or password in the Neon URL
-- a missing `sslmode=require`
-- a stale container that was not rebuilt after editing `.env`
-- the wrong database URL still being used by the container
+Common connection failures: wrong credentials, missing `sslmode=require`, stale container not rebuilt after `.env` changes.
 
 ---
 
 ## Database Migrations & Initialization
 
-The database schema is managed with **Alembic** migrations. Migrations live in
-`migrations/` and are configured via `alembic.ini`. The migration environment
-resolves the database URL exactly like the application does (`DATABASE_URL`,
-then `NEON_DATABASE_URL`, then `POSTGRES_URL`, with Neon URL normalization), so
-it works with the production `.env` connection string.
+Migrations live in `migrations/` (Alembic). The migration environment resolves the database URL exactly like the app (`DATABASE_URL` → `NEON_DATABASE_URL` → `POSTGRES_URL`, with Neon normalization).
 
-### Initializing the Schema
-
-Run the initialization script to apply all pending migrations (schema only, no
-seed data):
+Apply pending migrations (schema only, no seed data):
 
 ```bash
-python scripts/init_db.py
+python scripts/init_db.py        # equivalent to: alembic upgrade head
 ```
 
-This is equivalent to running:
-
-```bash
-alembic upgrade head
-```
-
-The baseline migration (`0001_initial_schema.py`) creates the `Members`,
-`Contributions`, `Treasury`, and `Welfare` tables. It is tolerant of databases
-that already contain these tables (e.g. created earlier by `db.create_all()` on
-startup), so it can be applied to both fresh and existing databases.
-
-### Working with Migrations
-
-After changing a model in `src/models/`, generate a new migration and apply it:
+Working with migrations:
 
 ```bash
 alembic revision --autogenerate -m "describe the change"
 alembic upgrade head
+alembic current                  # show current revision
+alembic history                  # list applied revisions
+alembic downgrade -1             # revert last migration
 ```
 
-Other useful commands:
-
-```bash
-alembic current          # show the current revision
-alembic history          # list applied revisions
-alembic downgrade -1     # revert the last migration
-```
-
-> Note: Alembic must be installed (it is part of `requirements.txt` /
-> `pyproject.toml`). Run `pip install -r requirements.txt` or `rye sync` first.
+The baseline migration (`0001_initial_schema.py`) creates `Members`, `Contributions`, `Treasury`, and `Welfare`. It is tolerant of databases that already contain these tables. Additionally, `db.py` runs small startup "schema fixes" (`ensure_member_auth_columns`) that add auth/contribution columns to an older `Members` table if missing.
 
 ---
 
-## Architecture & Design
+## Architecture
 
-### Application Structure (MVC Pattern)
+The app follows an MVC-style layout:
 
-1. **Models** (`src/models/member.py`)
-   - Defines database schema using SQLAlchemy ORM
-   - Currently includes only the `memberModel` class
-   - All business logic is embedded in the model
+1. **Models** (`src/models/`) — SQLAlchemy ORM classes for `Members`, `Contributions`, `Treasury`, `Welfare`. Business helpers live on the model (e.g. `memberModel.set_password` / `check_password` / `is_admin`).
+2. **Resources** (`src/resources/`) — flask-smorest blueprints defining endpoints, auth decorators, and error handling per operation.
+3. **Schemas** (`src/schemas/`) — Marshmallow schemas for request validation and response serialization (including `SQLAlchemyAutoSchema`-based schemas).
+4. **Database layer** (`src/db.py`) — central SQLAlchemy instance, URL normalization, connection pool options, startup schema fixes.
+5. **Application entry** (`src/app.py`) — config, JWT manager, blueprint registration, request-ID middleware, global error handlers.
+6. **Logging** (`src/logging_config.py`) — console or JSON structured logging with a per-request correlation ID (also echoed as the `X-Request-ID` response header).
 
-2. **Resources/Controllers** (`src/resources/member.py`)
-   - Flask-Smorest Blueprints that define API endpoints
-   - Handle HTTP requests and return JSON responses
-   - Two endpoints implemented for member operations
+### Authentication
 
-3. **Database Layer** (`src/db.py`)
-   - Centralized SQLAlchemy instance for database connection management
-   - Used by models and resources for database operations
+- JWT issued on signup/login via flask-jwt-extended.
+- Default access-token lifetime is **15 minutes**; there is no refresh endpoint — clients re-authenticate on expiry.
+- Token identity is the member id; claims include `name` and `role`.
+- Roles: `user` (default) and `admin`. Treasury access requires `admin`.
 
-4. **Application Entry Point** (`src/app.py`)
-   - Flask app initialization and configuration
-   - API configuration with Swagger UI settings
-   - Blueprint registration
-   - Default welcome route
+### Error Handling
 
-### API Documentation
+Error bodies vary by source; clients should rely on the HTTP status code:
 
-- **OpenAPI Version**: 3.0.3
-- **Swagger UI**: Available at `/swagger-ui`
-- **CDN-hosted Swagger UI**: Uses jsdelivr CDN for UI assets
-- All endpoints are auto-documented based on decorators
+- Application errors (flask-smorest `abort`) → `{"error": "<message>", "status_code": <code>}`
+- JWT failures → `{"msg": "..."}` (401/422)
+- Schema validation via `blp.arguments` → `422`
+- Global handlers catch `HTTPException`, marshmallow `ValidationError`, `SQLAlchemyError`, and unexpected exceptions (500s).
 
 ---
 
 ## Database Schema
 
-### Member Model (`memberModel`)
+### Members (`Members`)
 
-**Table Name**: `Members`
+| Column                   | Type            | Constraints | Notes |
+| ------------------------ | --------------- | ----------- | ----- |
+| `id`                     | Integer         | PK          | |
+| `name`                   | String(40)      | Unique, Not Null | Used for login |
+| `email_address`          | String(40)      | Unique, Not Null | |
+| `phone_number`           | Integer         | Not Null    | 32-bit int |
+| `birthday`               | DateTime        | Nullable    | |
+| `age_group`              | String(20)      | Nullable    | |
+| `total_contributions`    | Numeric(10,2)   | Nullable    | |
+| `contributions_predated` | DateTime        | Nullable    | |
+| `password_hash`          | String(255)     | Not Null    | Hashed, never serialized |
+| `contributions_tier`     | Numeric(10,2)   | Nullable    | Not serialized |
+| `contributions_debt`     | Numeric(10,2)   | Nullable    | Not serialized |
+| `loans_debt`             | Numeric(10,2)   | Nullable    | Not serialized |
+| `contributions_dated_at` | DateTime        | Nullable    | Not serialized |
+| `role`                   | String(10)      | Not Null    | `user` / `admin` |
 
-| Column                   | Type          | Constraints      | Description                                        |
-| ------------------------ | ------------- | ---------------- | -------------------------------------------------- |
-| `id`                     | Integer       | Primary Key      | Unique identifier for each member                  |
-| `name`                   | String(40)    | Unique, Not Null | Member's full name                                 |
-| `email_address`          | String(40)    | Unique, Not Null | Member's email address                             |
-| `phone_number`           | Integer       | Nullable         | Member's phone number                              |
-| `birthday`               | DateTime      | Nullable         | Member's date of birth                             |
-| `age_group`              | String(20)    | Not Null         | Age group classification (e.g., "18-25", "26-35")  |
-| `total_contributions`    | Numeric(10,2) | Nullable         | Sum of all contributions (supports decimal values) |
-| `contributions_predated` | DateTime      | Nullable         | Date when contributions started/were predated      |
+Relationships: one-to-many with `Contributions` (delete-orphan cascade).
 
-**Notes**:
+### Contributions (`Contributions`)
 
-- `name` and `email_address` are unique constraints (prevents duplicates)
-- `age_group` is a required field for all members
-- Contribution-related fields support historical tracking
+| Column | Type             | Constraints | Notes |
+| ------ | ---------------- | ----------- | ----- |
+| `id`   | Integer          | PK          | |
+| `member_id` | Integer     | FK → Members.id, Not Null | |
+| `amount` | Numeric(12,2)  | Not Null    | Serialized as string |
+| `date`  | DateTime         | Not Null    | |
+| `type`  | Enum(`boma`,`mpesa`,`cash`,`bank`) | Not Null | Serialized as `contribution_type` |
+
+### Welfare (`Welfare`)
+
+| Column | Type             | Constraints | Notes |
+| ------ | ---------------- | ----------- | ----- |
+| `id`   | Integer          | PK          | Used in item URLs |
+| `event_id` | Integer       | Not Null    | Separate business id, set on create |
+| `event_name` | String(100) | Not Null    | |
+| `date`  | DateTime         | Not Null    | |
+| `description` | Text        | Nullable    | |
+| `amount_spent` | Numeric(12,2) | Nullable | |
+| `status` | Enum(`Done`,`Not Completed`) | Not Null | |
+
+### Treasury (`Treasury`)
+
+| Column | Type             | Constraints |
+| ------ | ---------------- | ----------- |
+| `id`   | Integer          | PK |
+| `current_balance`, `money_in_this_year`, `money_out_this_year`, `boma_yangu`, `market_fund`, `government_bonds`, `cryptocurrency` | Numeric(12,2) | Nullable |
+| `current_balance_date` | DateTime | Nullable |
 
 ---
 
 ## API Endpoints
 
-All endpoints are prefixed with `/api/` (configured through flask-smorest) and return JSON responses.
+All endpoints return JSON and live at the **root path (no `/api/` prefix)**. Date/times are ISO-8601 strings; money values serialize as strings (e.g. `"250.00"`).
 
-### 1. Get All Members
+### Auth
 
-- **Endpoint**: `GET /api/members`
-- **Description**: Retrieves a list of all members in the database
-- **Response**: 200 OK
-- **Returns**: Array of member objects with fields: `id`, `name`, `email_address`, `phone_number`, `birthday`, `age_group`
-- **Implementation**: Queries all records from the Members table, excludes `total_contributions` and `contributions_predated` from response
+#### `POST /auth/signup` — create a member account (public)
+Request: `{ "name", "email_address", "phone_number", "password" }`
+Response `201`: `{ "message", "access_token", "member": { id, name, email_address, phone_number, role } }`
+Errors: `409` name/email already exists; `422` validation.
 
-### 2. Get Member by ID
+#### `POST /auth/login` — log in by name (public)
+Request: `{ "name", "password" }`
+Response `200`: same shape as signup.
+Errors: `401` invalid credentials.
 
-- **Endpoint**: `GET /api/members/<int:member_id>`
-- **Description**: Retrieves a single member by their ID
-- **Parameters**: `member_id` (URL path parameter, integer)
-- **Response Success**: 200 OK with member object
-- **Response Error**: 404 Not Found if member doesn't exist
-- **Returns**: Single member object with fields: `id`, `name`, `email_address`, `phone_number`, `birthday`, `age_group`
-- **Error Handling**: Uses flask-smorest `abort()` for 404 responses
+### Members
 
-### Root Endpoint
+#### `GET /members` — list all members (🔒 auth)
+Response `200`: array of member objects (id, name, email_address, phone_number, birthday, age_group, total_contributions, contributions_predated, role).
 
-- **Endpoint**: `GET /`
-- **Description**: Welcome message from the application
-- **Returns**: "Welcome to the Jalod Server App!"
+#### `POST /members` — register a member (public)
+Request: `{ "name", "email_address", "phone_number", "birthday"? }`
+Response `201`: member object.
+
+#### `GET /members/{member_id}` — get one member (public)
+Response `200` / `404`.
+
+#### `PUT /members/{member_id}` — update a member (public, partial)
+Response `200` / `404`.
+
+#### `DELETE /members/{member_id}` — delete a member (🔒 auth)
+Response `204` / `404`. Cascade-deletes contributions.
+
+#### `GET /members/birthdays` — all birthdays ascending (🔒 auth)
+Response `200`: `[{ id, name, birthday }]` (only members with a birthday).
+
+#### `GET /members/me/contributions` — authenticated member's contributions, trailing 12 months (🔒 auth)
+Response `200`: array of contribution objects ascending by date.
+
+### Contributions (all 🔒 auth, ownership-scoped)
+
+Access to another member's contribution returns `404`.
+
+#### `POST /contributions` — record a contribution
+Request: `{ "amount": "250.00", "date": "2026-07-10T00:00:00", "contribution_type": "mpesa" }` (`contribution_type` ∈ `boma|mpesa|cash|bank`)
+Response `201`: `{ id, member_id, amount, date, contribution_type }`.
+
+#### `GET /contributions/{id}` — get one of my contributions
+`200` / `404`.
+
+#### `PUT /contributions/{id}` — update one of my contributions (partial)
+`200` / `404`.
+
+#### `DELETE /contributions/{id}` — delete one of my contributions
+`204` / `404`.
+
+### Welfare
+
+#### `GET /welfare` — list all events (public)
+Response `200`: array of welfare objects ascending by date.
+
+#### `POST /welfare` — create an event (🔒 auth)
+Request: `{ "event_id", "event_name", "date", "description"?, "amount_spent"?, "status" }` (`status` ∈ `Done|Not Completed`)
+Response `201`.
+
+#### `GET /welfare/{id}` — get one event (public)
+`200` / `404`. Note: `{id}` is the primary key.
+
+#### `PUT /welfare/{id}` — update an event (🔒 auth, partial)
+`200` / `404`.
+
+#### `DELETE /welfare/{id}` — delete an event (🔒 auth)
+`204` / `404`.
+
+#### `GET /welfare/month/{year}/{month}` — events + birthdays for a month (public)
+`month` 1–12 (else `400`). Response `200`: `{ "events": [...], "birthdays": [...] }`.
+
+### Treasury
+
+#### `GET /treasury` — get treasury data (🔒 auth + admin)
+Non-admin → `403`. **Stub:** currently returns `200 []`.
+
+### Root
+
+#### `GET /` — welcome
+Returns plain text `Welcome to the Jalod Server App!`
 
 ---
 
-## Current Configuration
+## Logging
 
-### Flask Configuration (`app.py`)
+Logging is configured centrally (`src/logging_config.py`):
 
-```python
-app.config['PROPAGATE_EXCEPTIONS'] = True
-app.config['API_TITLE'] = 'Jalod Server API'
-app.config['API_VERSION'] = 'v1'
-app.config['OPENAPI_VERSION'] = '3.0.3'
-app.config['OPENAPI_URL_PREFIX'] = '/'
-app.config['OPENAPI_SWAGGER_UI_PATH'] = '/swagger-ui'
-app.config['OPENAPI_SWAGGER_UI_URL'] = 'https://cdn.jsdelivr.net/npm/swagger-ui-dist/'
+- Console output by default; set `LOG_FORMAT=json` for structured JSON (log-aggregator friendly).
+- `LOG_LEVEL` controls verbosity; `LOG_FILE` enables a rotating file handler (10 MB × 5).
+- Every request gets a correlation ID: logs include `[request_id]` and responses carry the `X-Request-ID` header.
+
+---
+
+## Testing
+
+Run the pytest suite:
+
+```bash
+pytest
 ```
 
-### Environment
-
-- Uses `python-dotenv` for loading `.env` files
-- The backend reads `DATABASE_URL`, `NEON_DATABASE_URL`, or `POSTGRES_URL`
-- Flask debug mode is enabled in development
-- JWT auth uses `JWT_SECRET_KEY` from the environment
-
----
-
-## Deployment & Execution
-
-### Docker Setup
-
-**Dockerfile Configuration**:
-
-- Base image: `python:3.12.5-slim`
-- Working directory: `/app`
-- Exposes port: `5000`
-- Installs dependencies from `requirements.txt`
-- Command: `flask run --host 0.0.0.0` (binds to all interfaces)
-
-**Docker Compose**:
-
-- Service name: `api`
-- Port mapping: `5000:5000`
-- Volume mount: `.:/app` (enables hot-reload during development)
-- Build context: Current directory
-
-### Running Locally
-
-1. **Clone the repository**
-
-   ```bash
-   git clone https://github.com/loicemeyo/jalod-server.git
-   cd jalod-server
-   ```
-
-2. **Option A: Using Docker Compose** (Recommended)
-
-   ```bash
-   docker-compose up
-   # Application runs at http://localhost:5000
-   ```
-
-3. **Option B: Using Docker**
-
-   ```bash
-   docker build -t jalod-api .
-   docker run -p 5000:5000 jalod-api
-   # Application runs at http://localhost:5000
-   ```
-
-4. **Option C: Direct Python** (requires Python 3.12+)
-   ```bash
-   pip install -r requirements.txt
-   export FLASK_APP=src/app.py
-   flask run
-   # Application runs at http://localhost:5000
-   ```
-
-### Testing the API
-
-- **Welcome endpoint**: http://localhost:5000
-- **Swagger UI**: http://localhost:5000/swagger-ui
-- **Get all members**: http://localhost:5000/api/members
-- **Get member by ID**: http://localhost:5000/api/members/1
-
----
-
-## Known Limitations & Missing Features
-
-### Current Limitations
-
-1. **No POST/PUT/DELETE endpoints**: Only read-only (GET) operations are implemented
-2. **No authentication/authorization**: No user authentication or permission system
-3. **No input validation**: Request payloads are not validated (relevant for future POST/PUT endpoints)
-4. **No error handling**: Limited error messaging beyond 404 responses
-5. **No pagination**: All members endpoint returns entire dataset without limits
-6. **Database not configured**: No database is currently initialized; would need migration setup (Alembic or similar)
-7. **No tests**: No unit tests or integration tests implemented
-8. **No logging**: No structured logging system in place
-9. **No CORS configuration**: Not configured for cross-origin requests
-10. **No data persistence**: Docker container doesn't persist database data between runs
-
-### Ready for Implementation (Building Blocks Exist)
-
-- **Create member** (POST /members) - Add a new member to the database
-- **Update member** (PUT /members/{id}) - Modify existing member information
-- **Delete member** (DELETE /members/{id}) - Remove a member from the database
-- **Search/Filter members** - Add query parameters for filtering by name, age_group, email, etc.
-- **Batch operations** - Create or update multiple members at once
-- **Advanced error handling** - Custom error responses with validation messages
-- **Request/response validation** - Using flask-smorest schemas
-- **Pagination** - Implement limit/offset or cursor-based pagination
-- **Sorting** - Add sorting capabilities to member list endpoint
-- **Rate limiting** - Protect endpoints from abuse
+Tests cover the full CRUD flows, auth requirements, ownership enforcement, and validation for members, contributions, welfare, birthdays, and treasury. The test client uses SQLite in a temp directory (see `tests/conftest.py`).
 
 ---
 
 ## Dependencies
 
-All dependencies are specified in both `requirements.txt` (pip) and `pyproject.toml` (Rye):
+Defined in both `requirements.txt` (pip) and `pyproject.toml` (Rye):
 
-- `flask` (3.0.3+) - Web framework
-- `flask-smorest` (0.x) - REST API framework with OpenAPI/Swagger
-- `python-dotenv` (1.0.1+) - Environment variable loading
-- `sqlalchemy` (2.0.34+) - SQL toolkit and ORM
-- `flask-sqlalchemy` (3.1.1+) - SQLAlchemy Flask integration
-
----
-
-## Development Notes for Future LLM Prompts
-
-When requesting new features or code generation, provide context with:
-
-1. **The feature you want to add** and how it fits into the current architecture
-2. **The endpoint specification** if it's a new API endpoint (method, path, request/response format)
-3. **Database changes** if needed (new fields, new models)
-4. **Reference to this README** for context on the existing structure
-
-### Example Prompts That Work Well
-
-- "Add a POST endpoint to create new members, following the existing Member model schema and flask-smorest patterns"
-- "Implement member search functionality using query parameters (name, age_group, email)"
-- "Add request validation using flask-smorest schemas for member creation"
-- "Create database migrations using Alembic for the existing memberModel"
-- "Add pagination to the GET /members endpoint with limit and offset parameters"
+- `flask` (3.0.3+)
+- `flask-smorest`
+- `flask-sqlalchemy` (3.1.1+)
+- `flask-jwt-extended` (4.6.0+)
+- `flask-marshmallow`, `marshmallow-sqlalchemy`
+- `sqlalchemy` (2.0.34+)
+- `psycopg2-binary` (PostgreSQL driver)
+- `alembic` (migrations)
+- `python-dotenv` (1.0.1+)
 
 ---
 
-## Next Steps
+## Known Limitations & Next Steps
 
-1. **Database initialization**: Set up PostgreSQL/MySQL connection and create schema
-2. **Data persistence**: Add database migrations and initialization scripts
-3. **CRUD operations**: Implement POST, PUT, DELETE endpoints for members
-4. **Input validation**: Add request/response schema validation
-5. **Testing**: Create unit and integration tests
-6. **Authentication**: Add JWT or session-based authentication
-7. **Logging & monitoring**: Implement structured logging and error tracking
-
----
-
-## Repository Info
-
-- **Repository**: loicemeyo/jalod-server
-- **Current Branch**: main
-- **Default Branch**: main
-- **License**: See LICENSE file
+- **Treasury** endpoint exists but returns no data (stub) — needs implementation.
+- **No pagination** on list endpoints (`GET /members`, `GET /welfare` return full tables).
+- **No refresh tokens** — access tokens expire after 15 minutes and clients must re-authenticate.
+- **No CORS** configuration (relevant if a web client is added).
+- **Phone numbers** stored as 32-bit integers; very long numbers may overflow.
+- **No admin-management endpoints** — the `admin` role is set directly in the database.
+- **No structured per-resource authorization beyond `admin`** for treasury and JWT ownership checks for contributions.
+- Candidate next features: treasury implementation, pagination/filtering, refresh tokens, CORS, admin user management, more tests.
