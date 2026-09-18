@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from flask.views import MethodView
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from flask_smorest import Blueprint, abort
@@ -7,12 +9,14 @@ try:
     from ..logging_config import get_logger
     from ..models.contribution import ContributionModel
     from ..models.member import memberModel
+    from ..models.treasury import TreasuryModel
     from ..schemas.contribution import ContributionCreateSchema, ContributionSchema, ContributionUpdateSchema
 except ImportError:  # pragma: no cover - allows running from src directory
     from db import db
     from logging_config import get_logger
     from models.contribution import ContributionModel
     from models.member import memberModel
+    from models.treasury import TreasuryModel
     from schemas.contribution import ContributionCreateSchema, ContributionSchema, ContributionUpdateSchema
 
 logger = get_logger("jalod_api.contributions")
@@ -51,6 +55,42 @@ def _load_owned_contribution(contribution_id: int) -> ContributionModel:
     return contribution
 
 
+def _get_or_create_treasury() -> TreasuryModel:
+    treasury = db.session.query(TreasuryModel).order_by(TreasuryModel.id.asc()).first()
+    if treasury is None:
+        treasury = TreasuryModel(
+            main_account_balance=Decimal("0.00"),
+            account_balance_date=None,
+            total_investments=Decimal("0.00"),
+        )
+        db.session.add(treasury)
+    return treasury
+
+
+def _update_treasury_for_contribution(
+    contribution_type: str,
+    amount: Decimal,
+    contribution_date,
+    *,
+    reverse: bool = False,
+):
+    treasury = _get_or_create_treasury()
+    amount = abs(Decimal(str(amount)))
+    signed_amount = -amount if reverse else amount
+
+    if contribution_type in {"mpesa", "cash", "bank"}:
+        current_balance = treasury.main_account_balance or Decimal("0.00")
+        treasury.main_account_balance = current_balance + signed_amount
+    elif contribution_type == "boma":
+        current_balance = treasury.main_account_balance or Decimal("0.00")
+        current_investments = treasury.total_investments or Decimal("0.00")
+        treasury.main_account_balance = current_balance + signed_amount
+        treasury.total_investments = current_investments + signed_amount
+
+    treasury.account_balance_date = contribution_date
+    db.session.add(treasury)
+
+
 @blp.route("/contributions")
 class Contributions(MethodView):
     @blp.arguments(ContributionCreateSchema, location="json")
@@ -64,6 +104,8 @@ class Contributions(MethodView):
         contribution.member_id = member.id
 
         db.session.add(contribution)
+        db.session.flush()
+        _update_treasury_for_contribution(contribution.type, contribution.amount, contribution.date)
         db.session.commit()
         logger.info(
             "Contribution created: contribution_id=%s member_id=%s amount=%s type=%s",
@@ -92,8 +134,15 @@ class Contribution(MethodView):
     def put(self, payload, contribution_id):
         """Edit a contribution owned by the authenticated member."""
         contribution = _load_owned_contribution(contribution_id)
+        original_amount = Decimal(str(contribution.amount))
+        original_type = contribution.type
+
         contribution = ContributionSchema().load(payload, instance=contribution, partial=True, session=db.session)
         contribution.member_id = _current_member_id()
+
+        if original_type != contribution.type or original_amount != Decimal(str(contribution.amount)):
+            _update_treasury_for_contribution(original_type, original_amount, contribution.date, reverse=True)
+            _update_treasury_for_contribution(contribution.type, contribution.amount, contribution.date)
 
         db.session.commit()
         logger.info("Contribution updated: contribution_id=%s", contribution_id)
@@ -105,6 +154,7 @@ class Contribution(MethodView):
     def delete(self, contribution_id):
         """Delete a contribution owned by the authenticated member."""
         contribution = _load_owned_contribution(contribution_id)
+        _update_treasury_for_contribution(contribution.type, contribution.amount, contribution.date, reverse=True)
         db.session.delete(contribution)
         db.session.commit()
         logger.info("Contribution deleted: contribution_id=%s", contribution_id)

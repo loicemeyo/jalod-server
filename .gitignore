@@ -12,3 +12,7 @@ wheels/
 
 # agent-facing README for the mobile app (not tracked in git)
 MOBILE_APP_README.md
+
+# yaml files
+*.yml
+*.yaml

@@ -35,7 +35,7 @@ from db import db, _normalize_database_url  # noqa: E402
 # Import every model so its tables are registered on the shared metadata.
 from models.member import memberModel  # noqa: F401,E402
 from models.contribution import ContributionModel  # noqa: F401,E402
-from models.treasury import TreasuryModel  # noqa: F401,E402
+from models.treasury import InvestmentModel, TreasuryModel  # noqa: F401,E402
 from models.welfare import WelfareModel  # noqa: F401,E402
 
 config = context.config

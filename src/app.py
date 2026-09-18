@@ -27,6 +27,7 @@ try:
     from .schemas import ma
     from .models.welfare import WelfareModel
     from .models.contribution import ContributionModel
+    from .models.treasury import InvestmentModel, TreasuryModel
 except ImportError:  # pragma: no cover - allows running app.py directly
     from db import configure_database, db, ensure_member_auth_columns
     from logging_config import (
@@ -43,6 +44,7 @@ except ImportError:  # pragma: no cover - allows running app.py directly
     from schemas import ma
     from models.welfare import WelfareModel
     from models.contribution import ContributionModel
+    from models.treasury import InvestmentModel, TreasuryModel
 
 # Ensure Flask-specific environment in `.flaskenv` is loaded during tests
 # and when the app is created programmatically. Some environments (pytest)

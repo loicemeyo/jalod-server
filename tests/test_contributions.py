@@ -63,6 +63,35 @@ def test_contribution_crud_flow(client):
         assert app_module.db.session.get(ContributionModel, contribution_id) is None
 
 
+def test_contribution_updates_treasury_summary(client):
+    import src.app as app_module
+    from src.models.treasury import TreasuryModel
+
+    _, token = _signup_member(client, "TreasuryUser", "treasury@example.com", 111111112)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.post(
+        "/contributions",
+        headers=headers,
+        json={"amount": 250.00, "date": "2026-07-10T00:00:00", "contribution_type": "mpesa"},
+    )
+    assert response.status_code == 201
+
+    response = client.post(
+        "/contributions",
+        headers=headers,
+        json={"amount": 75.00, "date": "2026-07-11T00:00:00", "contribution_type": "boma"},
+    )
+    assert response.status_code == 201
+
+    with app_module.app.app_context():
+        treasury = app_module.db.session.query(TreasuryModel).first()
+        assert treasury is not None
+        assert treasury.main_account_balance == 325.00
+        assert treasury.total_investments == 75.00
+        assert treasury.account_balance_date is not None
+
+
 def test_contribution_crud_requires_authentication(client):
     assert client.post("/contributions", json={"amount": 1, "date": "2026-07-10T00:00:00", "contribution_type": "cash"}).status_code == 401
     assert client.get("/contributions/1").status_code == 401
